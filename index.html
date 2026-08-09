@@ -144,10 +144,11 @@ go.addEventListener('click', async () => {
 });
 
 function parseWorks(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const rawLines = text.split('\n').map(l => l.trim());
+  const lines = rawLines.filter(Boolean);
   const works = [];
 
-  // Word counts: "Words: 42,000" or "42.5k words" or "42000 words"
+  // --- Word counts ---
   const wordCounts = [];
   for (const line of lines) {
     let m = line.match(/Words:\s*([\d,\.]+)\s*([kK])?/);
@@ -159,13 +160,16 @@ function parseWorks(text) {
     }
   }
 
-  // "Title by Author" lines — AO3 blurb headers and most rec-list formats
+  const isNoise = s =>
+    (s.replace(/[^A-Za-z]/g, '').length / Math.max(s.length, 1)) < 0.4 ||
+    s.replace(/[^A-Za-z]/g, '').length < 2;
+
+  // --- Strategy 1: explicit "Title by Author" on one line (rec-lists) ---
   const seen = new Set();
   for (const line of lines) {
-    const m = line.match(/^(.{2,80}?)\s+by\s+([A-Za-z0-9_\-\. ]{2,40})$/);
+    const m = line.match(/^(.{2,80}?)\s+by\s+([^\n]{2,40})$/);
     if (m) {
-      const title = m[1].replace(/[|•·]+$/, '').trim();
-      // Skip lines that are clearly not titles
+      const title = m[1].replace(/[|\u2022\u00b7]+$/, '').trim();
       if (/^(inspired|translated|beta|podfic|written)/i.test(title)) continue;
       const key = title.toLowerCase();
       if (seen.has(key)) continue;
@@ -174,10 +178,34 @@ function parseWorks(text) {
     }
   }
 
+  // --- Strategy 2: AO3 blurb layout (author line sits above "Summary:") ---
+  if (works.length === 0) {
+    const sumIdx = lines.findIndex(l => /^Summary\s*:?/i.test(l));
+    if (sumIdx > 0) {
+      const author = lines[sumIdx - 1].trim();
+
+      // Find end of the stats block (last line mentioning stats fields)
+      let statsEnd = -1;
+      for (let i = 0; i < sumIdx; i++) {
+        if (/(Hits|Kudos|Bookmarks|Chapters|Words|Comments)\s*:/i.test(lines[i])) statsEnd = i;
+      }
+
+      const titleLines = [];
+      for (let i = statsEnd + 1; i < sumIdx - 1; i++) {
+        if (!isNoise(lines[i])) titleLines.push(lines[i].replace(/^[.\-\s]+|[.\-\s]+$/g, ''));
+      }
+      const title = titleLines.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (title || author) {
+        works.push({ title, author, word_count: '' });
+      }
+    }
+  }
+
   // Pair word counts with works in order of appearance
   works.forEach((w, i) => { if (wordCounts[i]) w.word_count = String(wordCounts[i]); });
 
-  // If we found a count but no "X by Y" line, offer a blank card with the count
+  // If we found a count but no work, offer a blank card with the count
   if (works.length === 0 && wordCounts.length > 0) {
     works.push({ title: '', author: '', word_count: String(wordCounts[0]) });
   }
