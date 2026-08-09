@@ -164,6 +164,9 @@ function parseWorks(text) {
     (s.replace(/[^A-Za-z]/g, '').length / Math.max(s.length, 1)) < 0.4 ||
     s.replace(/[^A-Za-z]/g, '').length < 2;
 
+  // OCR often inserts a space after underscores in usernames (e.g. "Raiden_ Helena")
+  const cleanAuthor = a => a.replace(/_\s+/g, '_').replace(/\s+_/g, '_').replace(/\s+/g, ' ').trim();
+
   // --- Strategy 1: explicit "Title by Author" on one line (rec-lists) ---
   const seen = new Set();
   for (const line of lines) {
@@ -174,7 +177,7 @@ function parseWorks(text) {
       const key = title.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      works.push({ title, author: m[2].trim(), word_count: '' });
+      works.push({ title, author: cleanAuthor(m[2].trim()), word_count: '' });
     }
   }
 
@@ -182,7 +185,7 @@ function parseWorks(text) {
   if (works.length === 0) {
     const sumIdx = lines.findIndex(l => /^Summary\s*:?/i.test(l));
     if (sumIdx > 0) {
-      const author = lines[sumIdx - 1].trim();
+      const author = cleanAuthor(lines[sumIdx - 1].trim());
 
       // Find end of the stats block (last line mentioning stats fields)
       let statsEnd = -1;
